@@ -7,9 +7,10 @@ use reqwest::{Body, Client, multipart};
 use rust_socketio::{ClientBuilder, Payload, RawClient};
 use serde_json::json;
 
+static SERVER_URL: &str = "SERVER_URL"; // Change it to your server URL.
 
 fn main() {
-    ClientBuilder::new("http://sket.chipirones.club")
+    ClientBuilder::new(SERVER_URL.to_owned())
         .namespace("/")
         .on("comm", callback)
         .on("join", join_callback)
@@ -104,7 +105,7 @@ async fn rq_post(file_name: &String) -> anyhow::Result<String> {
         .part("ss", sf);
 
     println!("Posting file {}", file_name);
-    let response = client.post("http://sket.chipirones.club/image").multipart(form).send().await?;
+    let response = client.post(SERVER_URL.to_owned() + "/image").multipart(form).send().await?;
     println!("Posted file {}", file_name);
     let result = response.text().await?;
 
